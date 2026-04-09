@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "ml-stock-forecasting"
+version = "0.1.0"
+description = "Production-grade ML pipeline for stock forecasting and portfolio optimization"
+authors = ["Admin <admin@example.com>"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+prophet = "^1.1.5"
+yfinance = "^0.2.40"
+scipy = "^1.13.1"
+supabase = "^2.5.1"
+streamlit = "^1.36.0"
+pandas = "^2.2.2"
+numpy = "^1.26.4"
+python-dotenv = "^1.0.1"
+plotly = "^5.22.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.2"
+mypy = "^1.10.0"
+ruff = "^0.4.9"
+black = "^24.4.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
