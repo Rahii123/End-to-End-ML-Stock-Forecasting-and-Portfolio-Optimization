@@ -33,7 +33,7 @@ st.markdown("""
         overflow: hidden;
     }
 </style>
-""", unsafe_allow_index=True)
+""", unsafe_allow_html=True)
 
 def main():
     st.title("📈 AI Stock Forecasting & Portfolio Optimization")
