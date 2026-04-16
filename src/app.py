@@ -35,6 +35,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_historical_cache(symbols):
+    """Caches Alpha Vantage data for 24 hours to prevent 60-second freezes."""
+    extractor = DataExtractor(symbols)
+    return extractor.fetch_historical_data(period="1y")
+
 def main():
     st.title("📈 AI Stock Forecasting & Portfolio Optimization")
     st.markdown("---")
@@ -56,8 +62,7 @@ def main():
 
     with col1:
         st.subheader("Historical Performance & Trends")
-        extractor = DataExtractor(symbols)
-        historical_df = extractor.fetch_historical_data(period="1y")
+        historical_df = get_historical_cache(symbols)
         
         if not historical_df.empty:
             # Normalize for comparison
