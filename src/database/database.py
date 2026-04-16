@@ -36,7 +36,7 @@ class SupabaseDatabase:
         try:
             logger.info(f"Saving {len(predictions)} predictions to Supabase...")
             # Supabase upsert requires a primary key or unique constraint (e.g., symbol + date)
-            response = self.client.table("predictions").upsert(predictions).execute()
+            response = self.client.table("predictions").upsert(predictions, on_conflict="symbol,prediction_date").execute()
             logger.info("Predictions saved successfully.")
             return response
         except Exception as e:
@@ -67,7 +67,7 @@ class SupabaseDatabase:
 
         try:
             data = [{"symbol": s, "weight": w} for s, w in weights.items()]
-            self.client.table("portfolio_weights").upsert(data).execute()
+            self.client.table("portfolio_weights").upsert(data, on_conflict="symbol").execute()
             logger.info("Portfolio weights saved successfully.")
         except Exception as e:
             logger.error(f"Error saving weights: {e}")
