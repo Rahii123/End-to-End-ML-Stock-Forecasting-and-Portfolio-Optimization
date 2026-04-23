@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Ensure project root is always on the Python path for both local and cloud deployments
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
