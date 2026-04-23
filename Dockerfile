@@ -1,32 +1,29 @@
-# Use Python 3.13 as requested
+# Use a lightweight Python base image
 FROM python:3.12-slim
 
 # Install system dependencies
+# build-essential is required for compiling numeric libraries like numpy/scipy if needed
 RUN apt-get update && apt-get install -y \
     build-essential \
-    curl \
-    software-properties-common \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-RUN curl -sSL https://install.python-poetry.org | python3 -
-ENV PATH="/root/.local/bin:$PATH"
-
+# Set working directory inside the container
 WORKDIR /app
 
-# Copy dependency files
-COPY pyproject.toml poetry.lock ./
+# Copy requirements file first for Docker layer caching
+COPY requirements.txt ./
 
-# Install dependencies
-RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi --no-root
+# CRITICAL SENIOR FIX: 
+# Install CPU-Only PyTorch from the specific index URL first to prevent a massive 3GB GPU download.
+# We use --no-cache-dir to keep the Docker image as small and cheap as possible.
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --no-cache-dir \
+    && pip install -r requirements.txt --no-cache-dir
 
-# Copy the rest of the application
+# Copy the rest of the application files
 COPY . .
 
-# Expose the Streamlit port
+# Expose the port Streamlit uses
 EXPOSE 8501
 
-# Command to run the Streamlit app
+# Command to keep the Streamlit app running indefinitely on the AWS server
 CMD ["streamlit", "run", "src/app.py", "--server.port=8501", "--server.address=0.0.0.0"]

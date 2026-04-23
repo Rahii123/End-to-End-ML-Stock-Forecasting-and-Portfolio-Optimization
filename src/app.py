@@ -35,22 +35,38 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Streamlit requires cached inputs to be immutable objects (Tuples, not Lists)
 @st.cache_data(ttl=86400, show_spinner=False)
-def get_historical_cache(symbols):
-    """Caches Alpha Vantage data for 24 hours to prevent 60-second freezes."""
-    extractor = DataExtractor(symbols)
+def get_historical_cache(symbols_tuple):
+    """Caches Alpha Vantage data for 24 hours to prevent freezes."""
+    extractor = DataExtractor(list(symbols_tuple))
     return extractor.fetch_historical_data(period="1y")
 
 def main():
     st.title("📈 AI Stock Forecasting & Portfolio Optimization")
     st.markdown("---")
 
-    symbols = ["AAPL", "GOOG", "PLTR", "JPM"]
-    
-    # Sidebar
+    # Dynamic Sidebar
     st.sidebar.header("Controls")
+    
+    # 1. Expanded list of available stocks
+    available_tickers = ["AAPL", "GOOG", "PLTR", "JPM", "MSFT", "TSLA", "NVDA", "AMZN", "META"]
+    
+    # 2. Add an interactive multi-select UI
+    symbols = st.sidebar.multiselect(
+        "Select Target Stocks:", 
+        options=available_tickers, 
+        default=["AAPL", "GOOG"]
+    )
+    
+    # 3. Fail-safe if the user unselects everything
+    if not symbols:
+        st.warning("⚠️ Please select at least one stock to begin.")
+        st.stop()
+
     if st.sidebar.button("🚀 Run Prediction Pipeline"):
-        with st.spinner("Executing ML Pipeline..."):
+        with st.spinner(f"Executing Deep Learning Pipeline for {symbols}..."):
+            # Only runs the pipeline on the selected stocks! Huge speed boost.
             run_pipeline(symbols)
             st.sidebar.success("Pipeline executed successfully!")
 
@@ -62,7 +78,8 @@ def main():
 
     with col1:
         st.subheader("Historical Performance & Trends")
-        historical_df = get_historical_cache(symbols)
+        # Must pass symbols as a tuple for caching to work
+        historical_df = get_historical_cache(tuple(symbols))
         
         if not historical_df.empty:
             # Normalize for comparison
@@ -79,7 +96,8 @@ def main():
     with col2:
         st.subheader("Optimized Portfolio Weights")
         if db.client:
-            weights_data = db.client.table("portfolio_weights").select("*").execute().data
+            # Only grab weights for the dynamically selected symbols if possible
+            weights_data = db.client.table("portfolio_weights").select("*").in_("symbol", symbols).execute().data
             if weights_data:
                 weights_df = pd.DataFrame(weights_data)
                 fig_pie = px.pie(weights_df, values='weight', names='symbol', hole=.4,
@@ -87,35 +105,45 @@ def main():
                 fig_pie.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_pie, use_container_width=True)
             else:
-                st.info("No optimization data yet. Run the pipeline.")
+                st.info(f"No optimization data yet for {symbols}. Run the pipeline.")
         else:
             st.warning("Supabase not connected. Showing mock weights.")
-            mock_weights = {"AAPL": 0.4, "GOOG": 0.3, "PLTR": 0.2, "JPM": 0.1}
-            fig_pie = px.pie(names=list(mock_weights.keys()), values=list(mock_weights.values()), hole=.4)
-            fig_pie.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig_pie, use_container_width=True)
-
+            
     st.markdown("---")
-    st.subheader("Next-Day Price Predictions")
+    st.subheader("1-Week Deep Learning Projective Forecast")
     
-    pred_col1, pred_col2, pred_col3, pred_col4 = st.columns(4)
-    cols = [pred_col1, pred_col2, pred_col3, pred_col4]
+    # Dynamically scale the UI columns based on how many stocks they selected
+    cols = st.columns(len(symbols))
 
     if db.client:
-        preds = db.get_latest_predictions()
-        # Find latest prediction for each symbol
-        latest_preds = {}
-        for p in preds:
-            if p['symbol'] not in latest_preds:
-                latest_preds[p['symbol']] = p
+        # Fetch future predictions strictly greater than or equal to tomorrow
+        today_str = datetime.date.today().isoformat()
+        preds = db.client.table("predictions").select("*").gt("prediction_date", today_str).execute().data
         
+        # We need to map { 'AAPL': [ {date, price}, ... ] }
+        chart_data = {}
+        for p in preds:
+            sym = p['symbol']
+            if sym not in chart_data:
+                chart_data[sym] = []
+            chart_data[sym].append({"date": p['prediction_date'], "price": p['predicted_price']})
+        
+        # Draw metric boxes directly into dynamic columns
         for i, symbol in enumerate(symbols):
             with cols[i]:
-                if symbol in latest_preds:
-                    val = latest_preds[symbol]['predicted_price']
-                    st.metric(label=f"{symbol} Target", value=f"${val:.2f}")
+                st.markdown(f"#### **{symbol} Trajectory**")
+                if symbol in chart_data and len(chart_data[symbol]) > 0:
+                    df_symbol = pd.DataFrame(chart_data[symbol]).sort_values("date")
+                    
+                    # Also calculate the next day value for a quick glance
+                    next_day_val = df_symbol.iloc[0]['price']
+                    st.markdown(f"**Tomorrow's Target:** `${next_day_val:.2f}`")
+                    
+                    fig = px.line(df_symbol, x="date", y="price", markers=True)
+                    fig.update_layout(height=250, margin=dict(l=0, r=0, t=10, b=0), template="plotly_dark", yaxis_title="Price", xaxis_title="")
+                    st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.metric(label=f"{symbol} Target", value="N/A")
+                    st.warning("N/A (Run Pipeline)")
     else:
         for i, symbol in enumerate(symbols):
             with cols[i]:

@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from sklearn.preprocessing import MinMaxScaler
 import logging
-from typing import Tuple
+from typing import Tuple, List
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -46,9 +46,9 @@ class StockForecaster:
             ys.append(data[i+seq_length])
         return np.array(xs), np.array(ys)
 
-    def forecast(self, df: pd.DataFrame, periods: int = 30) -> Tuple[pd.DataFrame, float]:
+    def forecast(self, df: pd.DataFrame, periods: int = 5) -> Tuple[pd.DataFrame, List[float]]:
         """
-        Trains the Hybrid Model and forecasts future prices.
+        Trains the Hybrid Model and autoregressively forecasts multiple future prices.
         """
         logger.info(f"Training Hybrid LSTM Ensemble model on {len(df)} data points...")
         
@@ -56,83 +56,83 @@ class StockForecaster:
             # ----------------------------------------------------------------
             # PHASE 1: The Statistical Macro-Trend Baseline
             # ----------------------------------------------------------------
-            # We use an Exponential Weighted Moving Average to find the stable "Core" trend.
-            # This completely bypasses the Windows C++ bug associated with Facebook Prophet, 
-            # while serving the exact same mathematical purpose: A stable, deterministic baseline.
             span = 20
             baseline_ewma = df['y'].ewm(span=span, adjust=False).mean()
             
-            # Predict the baseline's trajectory into the future
-            baseline_next_day = baseline_ewma.iloc[-1]
+            # Predict the baseline's trajectory into the future using momentum
+            baseline_momentum = baseline_ewma.iloc[-1] - baseline_ewma.iloc[-2]
             
             # ----------------------------------------------------------------
             # PHASE 2: Residual Chaos Extraction
             # ----------------------------------------------------------------
-            # We subtract the sturdy baseline from the Actual stock price.
-            # What's left over is pure, unexplained "Chaotic Noise" (Residuals).
             residuals = df['y'] - baseline_ewma
             
             # ----------------------------------------------------------------
             # PHASE 3: Deep Learning (LSTM)
             # ----------------------------------------------------------------
-            # Neural networks require small scaled numbers (between -1 and 1) to do math efficiently.
             scaler = MinMaxScaler(feature_range=(-1, 1))
             res_scaled = scaler.fit_transform(residuals.values.reshape(-1, 1))
             
-            # We will use the last 5 days to predict the 6th day
             seq_length = 5
             if len(res_scaled) <= seq_length:
                 raise ValueError("Dataset is too small to train an LSTM model.")
                 
             X, y = self.create_sequences(res_scaled, seq_length)
             
-            # Convert NumPy arrays to PyTorch Tensors
             X_torch = torch.FloatTensor(X)
             y_torch = torch.FloatTensor(y)
             
-            # Initialize Neural Network
-            torch.manual_seed(42) # Lock randomness for reproducible results
+            torch.manual_seed(42)
             lstm_net = LSTMModel()
             loss_function = nn.MSELoss()
             optimizer = torch.optim.Adam(lstm_net.parameters(), lr=0.01)
             
-            # Train the Neural Network via Backpropagation
             logger.info("Initiating LSTM Neural Network Backpropagation (50 Epochs)...")
             epochs = 50
             for i in range(epochs):
-                optimizer.zero_grad()           # Clear old gradients
-                y_pred = lstm_net(X_torch)      # Guess the residual
-                loss = loss_function(y_pred, y_torch) # Check how wrong the guess was
-                loss.backward()                 # Calculate math derivatives
-                optimizer.step()                # Adjust network weights to be smarter
+                optimizer.zero_grad()
+                y_pred = lstm_net(X_torch)
+                loss = loss_function(y_pred, y_torch)
+                loss.backward()
+                optimizer.step()
                 
             # ----------------------------------------------------------------
-            # PHASE 4: The Final Prediction Synthesis
+            # PHASE 4: Autoregressive Multi-Step Synthesis
             # ----------------------------------------------------------------
-            # Ask the fully trained LSTM to predict tomorrow's chaotic residual error
-            recent_seq = res_scaled[-seq_length:]
-            input_seq = torch.FloatTensor(recent_seq).unsqueeze(0) # Format for PyTorch
+            current_seq_scaled = res_scaled[-seq_length:].copy()
+            predicted_residuals_dollars = []
             
+            # Loop recursively to project a full 'periods' distance into the future
+            lstm_net.eval()
             with torch.no_grad():
-                lstm_net.eval()
-                next_res_scaled = lstm_net(input_seq).item()
-                
-            # Un-scale the decimal back to a dollar amount
-            predicted_residual_dollars = scaler.inverse_transform([[next_res_scaled]])[0][0]
+                for _ in range(periods):
+                    input_seq = torch.FloatTensor(current_seq_scaled).unsqueeze(0)
+                    next_res_scaled = lstm_net(input_seq).item()
+                    
+                    pred_res_usd = scaler.inverse_transform([[next_res_scaled]])[0][0]
+                    predicted_residuals_dollars.append(pred_res_usd)
+                    
+                    # Slide the sequence forward by dropping day 1 and appending the new fake prediction
+                    current_seq_scaled = np.append(current_seq_scaled[1:], [[next_res_scaled]], axis=0)
             
-            # Synthesis: Baseline Trend Prediction + LSTM's predicted Chaos Adjustment = Final Answer
-            final_target_price = baseline_next_day + predicted_residual_dollars
+            # Combine Future Baseline + Future Chaos
+            final_target_prices = []
+            for d in range(periods):
+                future_baseline = baseline_ewma.iloc[-1] + (baseline_momentum * (d + 1))
+                final_target_prices.append(future_baseline + predicted_residuals_dollars[d])
             
-            # Fill out the required dataframe for the rest of the pipeline
+            # Compute future business dates
+            future_dates = pd.date_range(start=df['ds'].iloc[-1], periods=periods+1, freq='B')[1:]
+            
             forecast = pd.DataFrame({
-                'ds': pd.date_range(start=df['ds'].iloc[-1], periods=periods+1, freq='B')[1:],
-                'yhat': [final_target_price] * periods,
-                'yhat_lower': [final_target_price * 0.95] * periods,
-                'yhat_upper': [final_target_price * 1.05] * periods,
+                'ds': future_dates,
+                'yhat': final_target_prices,
+                'yhat_lower': [p * 0.95 for p in final_target_prices],
+                'yhat_upper': [p * 1.05 for p in final_target_prices],
             })
             
-            logger.info(f"Hybrid Synthesis Complete! Baseline (${baseline_next_day:.2f}) + LSTM Noise Vector (${predicted_residual_dollars:.2f}) = Final Target: ${final_target_price:.2f}")
-            return forecast, float(final_target_price)
+            logger.info(f"Hybrid Autoregressive Synthesis Complete for {periods} days!")
+            return forecast, list(final_target_prices)
 
         except Exception as e:
             logger.error(f"Critical error during Hybrid Neural Network Training: {e}")

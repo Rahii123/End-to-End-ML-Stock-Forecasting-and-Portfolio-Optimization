@@ -36,17 +36,20 @@ def run_pipeline(symbols: List[str]):
     # 3. Forecasting
     forecaster = StockForecaster()
     predictions = []
-    tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
     
     for symbol in symbols:
         try:
             prophet_df = processor.prepare_for_prophet(cleaned_data, symbol)
-            _, next_day_pred = forecaster.forecast(prophet_df, periods=1)
-            predictions.append({
-                "symbol": symbol,
-                "prediction_date": tomorrow,
-                "predicted_price": float(next_day_pred)
-            })
+            # Forecast 5-days out using Autoregressive LSTM
+            forecast_df, preds_list = forecaster.forecast(prophet_df, periods=5)
+            
+            for idx, pred_val in enumerate(preds_list):
+                pred_date = forecast_df['ds'].iloc[idx].strftime('%Y-%m-%d')
+                predictions.append({
+                    "symbol": symbol,
+                    "prediction_date": pred_date,
+                    "predicted_price": float(pred_val)
+                })
         except Exception as e:
             logger.error(f"Failed to forecast {symbol}: {e}")
 
