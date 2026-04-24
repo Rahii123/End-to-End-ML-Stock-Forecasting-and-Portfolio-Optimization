@@ -1,0 +1,38 @@
+# Virtual Environments - These are the 1.14GB causing Docker to crash!
+ml-stock-env/
+venv/
+env/
+.venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Git folder
+.git/
+.gitignore
+
+# Local environment secrets - never copy to Docker!
+.env
+
+# Test files - not needed in production
+tests/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
