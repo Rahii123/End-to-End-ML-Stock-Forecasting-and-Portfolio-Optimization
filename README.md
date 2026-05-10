@@ -1,28 +1,79 @@
-# 📈 ML Stock Forecasting & Portfolio Optimization
+# 📈 End-to-End ML Stock Forecasting & Portfolio Optimization
 
-A production-grade pipeline for predicting stock prices and optimizing portfolio weights using Modern Portfolio Theory (MPT).
+A production-grade pipeline for predicting stock prices using Deep Learning (PyTorch) and optimizing portfolio weights using Modern Portfolio Theory (MPT). 
 
-## 🚀 Quick Start
-
-### 1. Prerequisities
-- Python 3.12+ (3.13 supported but 3.12 recommended for stability)
-- [Poetry](https://python-poetry.org/docs/#installation)
-- [Docker](https://www.docker.com/) (for deployment)
-
-### 2. Setup
-```bash
-make install
-cp .env.example .env  # Then fill in your Supabase credentials
-```
-
-### 3. Usage
-- **Run Pipeline**: `make pipeline`
-- **Run Frontend**: `make app`
-- **Run Tests**: `make test`
+This project uses **Residual Chaos Extraction** (training an LSTM neural network on the residual noise of an EWMA statistical baseline) to accurately capture both long-term momentum and short-term mean-reversion pullbacks over a 5-day autoregressive horizon.
 
 ---
 
-## ☁️ Supabase Setup Guide (BaaS)
+## 🏗️ The Project Workflow
+
+1. **Data Extraction**: Fetches historical daily stock data using the Alpha Vantage API (or yfinance).
+2. **Hybrid ML Forecasting**: 
+    - Calculates an **EWMA** (Exponential Weighted Moving Average) baseline for macro trend.
+    - Trains a **PyTorch LSTM Neural Network** from scratch (Online Learning) on the residual differences between the actual price and the EWMA.
+    - Autoregressively predicts T+1 to T+5 closing prices.
+3. **Portfolio Optimization**: Applies SLSQP optimization to calculate the optimal asset allocation weights to maximize the Sharpe Ratio.
+4. **Cloud Database Sync**: Pushes all predicted 5-day trajectories and portfolio weights into a **Supabase (PostgreSQL)** database.
+5. **Dynamic Dashboard**: A fully interactive **Streamlit** frontend dynamically reads from Supabase and scales Plotly Line Charts for any user-selected stock combination.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Forecasting**: PyTorch (LSTM), Scikit-Learn
+- **Statistical Baseline**: Pandas EWMA
+- **Optimization**: SciPy (SLSQP Solver)
+- **Data Source**: Alpha Vantage API
+- **Backend Database**: Supabase (PostgreSQL)
+- **Frontend / Deployment**: Streamlit & Streamlit Community Cloud
+- **Visualizations**: Plotly Express
+- **Package Management**: `uv` / `pip`
+
+---
+
+## 🚀 Quick Start (Local Development)
+
+### 1. Prerequisites
+- Python 3.11+
+- A [Supabase](https://supabase.com/) account
+- An [Alpha Vantage](https://www.alphavantage.co/support/#api-key) API Key
+
+### 2. Setup
+Clone the repository and install the dependencies. We explicitly use the CPU version of PyTorch to keep the environment lightweight and production-ready.
+
+```bash
+# Create a virtual environment
+python -m venv ml-stock-env
+# Activate it (Windows)
+.\ml-stock-env\Scripts\activate
+
+# Install PyTorch CPU and remaining requirements
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --no-cache-dir
+pip install -r requirements.txt --no-cache-dir
+```
+
+### 3. Environment Variables
+Create a `.env` file in the root directory:
+```toml
+SUPABASE_URL="your_supabase_url"
+SUPABASE_KEY="your_supabase_anon_key"
+ALPHA_VANTAGE_API_KEY="your_alpha_key"
+```
+
+### 4. Running the Project
+- **Execute the Prediction Pipeline**: 
+  ```bash
+  python -m src.main
+  ```
+- **Launch the Interactive Dashboard**: 
+  ```bash
+  python -m streamlit run src/app.py
+  ```
+
+---
+
+## ☁️ Supabase Setup Guide
 
 1. **Create Project**: Sign in to [Supabase](https://supabase.com/) and create a new project.
 2. **Database Schema**: Go to the SQL Editor and run the following queries:
@@ -46,45 +97,19 @@ CREATE TABLE portfolio_weights (
 );
 ```
 
-3. **API Keys**: Go to **Project Settings > API**.
-   - Copy `Project URL` to `SUPABASE_URL` in your `.env`.
-   - Copy `anon public` key to `SUPABASE_KEY` in your `.env`.
-
 ---
 
-## 🏗️ AWS ECS Deployment Guide
+## 🌐 Deployment (Streamlit Community Cloud)
 
-### 1. Infrastructure (ECS Fargate)
-We use AWS ECS with Fargate for a serverless, scalable deployment.
+This application is designed to be hosted serverlessly on **Streamlit Community Cloud** with zero infrastructure management required.
 
-1. **ECR (Elastic Container Registry)**:
-   - Create a repository named `stock-forecaster`.
-   - Authenticate and push your image: `make build` -> `docker tag ...` -> `docker push ...`.
-
-2. **ECS Cluster**:
-   - Create a new Cluster (e.g., `ml-pipeline-cluster`).
-
-3. **Task Definition**:
-   - Launch type: **FARGATE**.
-   - Container Image: Your ECR URI.
-   - Environment Variables: Add `SUPABASE_URL` and `SUPABASE_KEY`.
-   - Port Mapping: 8501.
-
-4. **Service**:
-   - Create a Service within your cluster using the Task Definition.
-   - Set up an **Application Load Balancer (ALB)** to expose the Streamlit app on port 80/443.
-
-### 2. Automation
-The GitHub Actions workflow in `.github/workflows/main.yml` handles:
-- Automated linting and testing.
-- **Scheduled Pipeline**: Runs every morning at 9 AM UTC to update predictions in Supabase.
-
----
-
-## 🛠️ Tech Stack
-- **Forecasting**: Facebook Prophet
-- **Optimization**: SciPy (SLSQP Solver)
-- **Data**: yfinance
-- **Backend**: Supabase (PostgreSQL)
-- **Frontend**: Streamlit
-- **DevOps**: Docker, GitHub Actions, Makefile
+1. Push your repository to GitHub.
+2. Go to [share.streamlit.io](https://share.streamlit.io/) and click **New App**.
+3. Select your repository and set the main file path to `src/app.py`.
+4. Click **Advanced Settings** and add your secrets exactly as formatted in TOML:
+   ```toml
+   SUPABASE_URL = "your_supabase_url"
+   SUPABASE_KEY = "your_supabase_anon_key"
+   ALPHA_VANTAGE_API_KEY = "your_alpha_key"
+   ```
+5. Click **Deploy**. Streamlit will automatically resolve the `src` package (via our injected `sys.path`), install the dependencies, and give you a live HTTPS URL!
